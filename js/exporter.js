@@ -74,28 +74,27 @@ function photoCSV(batch, photos, prefixPath) {
 
 /** 照片汇总 HTML（供 ZIP 内打印，或手机新窗口打印/存 PDF） */
 export function summaryHtml(batch, photos, { urlFor, exportedAt = Date.now() } = {}) {
-  const groups = CATEGORIES.map(c => ({
-    cat: c,
-    list: sortedPhotos(photos).filter(p => p.category === c.key),
-  })).filter(g => g.list.length);
   const total = photos.length;
-
-  const groupsHtml = groups.map(g => `
-    <section class="grp">
-      <h2>${g.cat.no} ${escapeHtml(g.cat.name)} <span>${g.list.length} 张</span></h2>
-      <div class="grid">
-        ${g.list.map((p, i) => `
-          <figure>
-            <img src="${escapeHtml(urlFor(p))}" alt="${escapeHtml(g.cat.short)} ${i + 1}">
-            <figcaption>
-              <b>${String(i + 1).padStart(2, '0')}</b>
-              <span>${fmtTime(p.takenAt)}</span>
-              ${p.lat != null ? `<span class="gps">GPS ${Number(p.lat).toFixed(6)}, ${Number(p.lng).toFixed(6)}${p.accuracy ? ` ±${Math.round(p.accuracy)}m` : ''}</span>` : '<span class="gps">GPS 未记录</span>'}
-              ${p.note ? `<span class="note">${escapeHtml(p.note)}</span>` : ''}
-            </figcaption>
-          </figure>`).join('')}
-      </div>
-    </section>`).join('');
+  const ordered = sortedPhotos(photos);
+  const catTotal = {};
+  ordered.forEach(p => { catTotal[p.category] = (catTotal[p.category] || 0) + 1; });
+  const seen = {};
+  const figuresHtml = ordered.map(p => {
+    seen[p.category] = (seen[p.category] || 0) + 1;
+    const c = cat(p.category);
+    const idx = catTotal[p.category] > 1 ? ` ${seen[p.category]}/${catTotal[p.category]}` : '';
+    const gps = p.lat != null
+      ? `GPS ${Number(p.lat).toFixed(6)}, ${Number(p.lng).toFixed(6)}${p.accuracy ? ` ±${Math.round(p.accuracy)}m` : ''}`
+      : 'GPS 未记录';
+    return `<figure>
+      <img src="${escapeHtml(urlFor(p))}" alt="${escapeHtml(c.short)} ${seen[p.category]}">
+      <figcaption>
+        <div class="cap"><b>${c.no} ${escapeHtml(c.short)}${idx}</b><span>${fmtTime(p.takenAt)}</span></div>
+        <div class="gps">${gps}</div>
+        ${p.note ? `<div class="note">${escapeHtml(p.note)}</div>` : ''}
+      </figcaption>
+    </figure>`;
+  }).join('');
 
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -113,23 +112,18 @@ export function summaryHtml(batch, photos, { urlFor, exportedAt = Date.now() } =
   table.meta td.k { background: #f6f3ec; color: #666; width: 76px; white-space: nowrap; }
   .topbar { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
   .print-btn { padding: 7px 14px; border: 0; border-radius: 6px; background: #22384c; color: #fff; font-size: 12px; cursor: pointer; }
-  .grp { margin-top: 14px; break-inside: auto; }
-  .grp h2 { font-size: 13px; margin: 0 0 6px; padding: 4px 0 4px 8px; border-left: 3px solid #b23a2b; background: #faf7f0; }
-  .grp h2 span { color: #888; font-weight: 400; font-size: 11px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm 5mm; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-top: 10px; }
   figure { margin: 0; break-inside: avoid; page-break-inside: avoid; }
-  figure img { width: 100%; height: 78mm; object-fit: contain; background: #f2f0ea; border: 1px solid #e2ddd2; }
+  figure img { width: 100%; height: 72mm; object-fit: contain; background: #f2f0ea; border: 1px solid #e2ddd2; }
   figcaption { font-size: 9.5px; line-height: 1.55; color: #555; padding-top: 3px; }
-  figcaption b { color: #b23a2b; }
-  figcaption span { margin-left: 6px; }
-  figcaption .gps { display: block; font-family: Consolas, monospace; font-size: 8.5px; color: #777; margin-left: 0; }
-  figcaption .note { display: block; margin-left: 0; color: #333; }
+  figcaption .cap { display: flex; justify-content: space-between; gap: 8px; }
+  figcaption b { color: #b23a2b; font-size: 10px; }
+  figcaption .gps { font-family: Consolas, monospace; font-size: 8.5px; color: #777; }
+  figcaption .note { color: #333; }
   .foot { margin-top: 14px; padding-top: 6px; border-top: 1px dashed #ccc; font-size: 9px; color: #888; }
   @media print {
     body { padding: 0; }
     .print-btn { display: none; }
-    .grp { break-inside: auto; }
-    .grp h2 { break-after: avoid; }
   }
 </style></head>
 <body>
@@ -146,7 +140,7 @@ export function summaryHtml(batch, photos, { urlFor, exportedAt = Date.now() } =
     <tr><td class="k">抽样人</td><td>${escapeHtml(batch.inspector || '')}</td><td class="k">报告编号</td><td>${escapeHtml(batch.reportNo || '')}</td></tr>
     <tr><td class="k">照片总数</td><td>${total} 张</td><td class="k">导出时间</td><td>${fmtTime(exportedAt)}</td></tr>
   </table>
-  ${groupsHtml || '<p>本批次暂无照片。</p>'}
+  <div class="grid">${figuresHtml || '<p>本批次暂无照片。</p>'}</div>
   <div class="foot">
     照片已烧入批次号、类别、拍摄时间与 GPS 经纬度水印；每张照片的 SHA-256 校验值见同目录《照片清单.csv》。
     本页由「抽样拍照」App 生成。
@@ -283,18 +277,16 @@ export async function printBatches(batchIds) {
         table.meta td.k { background:#f6f3ec; color:#666; width:76px; white-space:nowrap; }
         .topbar { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
         .print-btn { padding:7px 14px; border:0; border-radius:6px; background:#22384c; color:#fff; font-size:12px; }
-        .grp { margin-top:14px; }
-        .grp h2 { font-size:13px; margin:0 0 6px; padding:4px 0 4px 8px; border-left:3px solid #b23a2b; background:#faf7f0; }
-        .grp h2 span { color:#888; font-weight:400; font-size:11px; }
-        .grid { display:grid; grid-template-columns:1fr 1fr; gap:6mm 5mm; }
+        .grid { display:grid; grid-template-columns:1fr 1fr; gap:5mm; margin-top:10px; }
         figure { margin:0; break-inside:avoid; page-break-inside:avoid; }
-        figure img { width:100%; height:78mm; object-fit:contain; background:#f2f0ea; border:1px solid #e2ddd2; }
+        figure img { width:100%; height:72mm; object-fit:contain; background:#f2f0ea; border:1px solid #e2ddd2; }
         figcaption { font-size:9.5px; line-height:1.55; color:#555; padding-top:3px; }
-        figcaption b { color:#b23a2b; }
-        figcaption span { margin-left:6px; }
-        figcaption .gps { display:block; font-family:Consolas,monospace; font-size:8.5px; color:#777; margin-left:0; }
+        figcaption .cap { display:flex; justify-content:space-between; gap:8px; }
+        figcaption b { color:#b23a2b; font-size:10px; }
+        figcaption .gps { font-family:Consolas,monospace; font-size:8.5px; color:#777; }
+        figcaption .note { color:#333; }
         .foot { margin-top:14px; padding-top:6px; border-top:1px dashed #ccc; font-size:9px; color:#888; }
-        @media print { body { padding:0; } .print-btn { display:none; } .grp h2 { break-after:avoid; } }
+        @media print { body { padding:0; } .print-btn { display:none; } }
       </style></head><body>
       <div style="text-align:right;margin-bottom:6px"><button class="print-btn" onclick="window.print()">打印 / 存为 PDF</button></div>
       ${sections.join('<hr style="border:0;border-top:1px dashed #ccc;margin:18px 0">')}

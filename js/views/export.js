@@ -43,7 +43,7 @@ export async function render(root, { id }) {
 
     body.innerHTML = rows.length ? `
       <div class="row" style="margin-bottom:10px">
-        <span class="section-title" style="margin:0">选择批次 <span class="line"></span></span>
+        <span class="section-title" style="margin:0;flex:1">选择批次 <span class="line"></span></span>
         <button class="btn quiet sm" id="e-all">${all ? '全不选' : '全选'}</button>
       </div>
       <div class="card" id="e-list">

@@ -1,6 +1,6 @@
 /* 离线缓存：应用外壳缓存优先，导航请求失败回退 index.html */
 
-const VERSION = 'v1.0.2';
+const VERSION = 'v1.0.3';
 const CACHE = `sampling-photo-${VERSION}`;
 const DOC = './index.html';
 
@@ -92,3 +92,4 @@ self.addEventListener('fetch', event => {
     })
   );
 });
+

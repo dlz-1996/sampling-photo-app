@@ -80,6 +80,18 @@ export async function openBatchForm(existing = null) {
     const val = name => el.querySelector(`[name="${name}"]`)?.value.trim() || '';
     const batchNoInput = el.querySelector('[name="batchNo"]');
 
+    if (existing?.status === 'submitted') {
+      batchNoInput.readOnly = true;
+      batchNoInput.style.background = 'var(--paper-2)';
+      const reqSel = el.querySelector('[name="required"]');
+      if (reqSel) reqSel.disabled = true;
+      const hint = document.createElement('div');
+      hint.className = 'hint';
+      hint.style.color = 'var(--seal)';
+      hint.textContent = '已提交锁定：批次号和最低张数不可修改，需先解锁。';
+      batchNoInput.closest('.field').appendChild(hint);
+    }
+
     el.querySelector('[data-cancel]').onclick = () => { closeSheet(); resolve(false); };
 
     el.querySelector('[data-save]').onclick = async () => {
