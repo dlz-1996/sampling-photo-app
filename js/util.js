@@ -231,7 +231,11 @@ export function closeSheet() {
   activeSheet = null;
   s.mask.remove();
   s.el.remove();
-  try { s.onClose?.(); } catch (e) { console.warn(e); }
+  // 延后到当前调用栈结束：显式 resolve(true) 会先完成，
+  // onClose 里为“取消”准备的 resolve(false) 就不会覆盖它。
+  queueMicrotask(() => {
+    try { s.onClose?.(); } catch (e) { console.warn(e); }
+  });
 }
 
 /**
