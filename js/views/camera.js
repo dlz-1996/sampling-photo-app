@@ -145,6 +145,21 @@ export async function render(root, { id, query }) {
     else setLastPhoto(null);
   }
 
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  async function waitFix(ms = 1500) {
+    let fix = controller.currentFix();
+    if (fix) return fix;
+    if (gpsState !== 'locating') return null;
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      await sleep(100);
+      fix = controller.currentFix();
+      if (fix) return fix;
+    }
+    return null;
+  }
+
   async function savePhoto(source, sourceKind, { silent = false } = {}) {
     const key = selected;
     if ((counts[key] || 0) >= MAX_PER_CATEGORY) {
@@ -152,7 +167,7 @@ export async function render(root, { id, query }) {
       return false;
     }
     const takenAt = Date.now();
-    const fix = controller.currentFix();
+    const fix = await waitFix(sourceKind === 'camera' ? 1800 : 900);
     const out = await processPhoto(source, {
       batchNo: batch.batchNo,
       categoryShort: cat(key).short,
@@ -255,6 +270,8 @@ export async function render(root, { id, query }) {
 
   function showFallback(err) {
     fallback.hidden = false;
+    shutter.style.opacity = '.35';
+    shutter.style.pointerEvents = 'none';
     if (err?.name === 'NotAllowedError') {
       fallbackMsg.textContent = '相机权限被拒绝。可在 Chrome 地址栏左侧的锁形图标里允许相机，或直接用系统相机拍照。';
     } else if (err?.name === 'NotSupportedError' || !window.isSecureContext) {
