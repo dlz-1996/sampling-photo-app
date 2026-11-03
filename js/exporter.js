@@ -4,6 +4,7 @@ import { zipSync, unzipSync, strToU8 } from './vendor/fflate.js';
 import { listBatches, getBatch, listPhotos, allPhotos, getSettings, saveSettings, putBatch, addPhoto } from './db.js';
 import { CATEGORIES, cat, folderName } from './categories.js';
 import { sanitizeFilename, fmtTime, fmtDate, fmtDateTimeFile, toCSV, pad, escapeHtml } from './util.js';
+import { isNativeApp, nativePrintHtml } from './native.js';
 
 const APP_TAG = 'sampling-photo-app';
 const BACKUP_VERSION = 1;
@@ -72,6 +73,34 @@ function photoCSV(batch, photos, prefixPath) {
   return { csv: toCSV(rows), files: out };
 }
 
+/** 汇总页样式（ZIP 内 HTML、新窗口打印、App 内系统打印共用） */
+const PRINT_CSS = `
+  @page { size: A4; margin: 12mm 10mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 18px 16px 40px; font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif; color: #1b1d1c; background: #fff; font-size: 12px; }
+  .head { border-bottom: 2px solid #b23a2b; padding-bottom: 8px; margin-bottom: 10px; }
+  h1 { font-size: 18px; margin: 0 0 6px; letter-spacing: .04em; }
+  .no { font-family: Consolas, monospace; font-size: 12px; color: #444; }
+  table.meta { border-collapse: collapse; width: 100%; margin: 8px 0 12px; font-size: 11px; }
+  table.meta td { border: 1px solid #ddd; padding: 4px 6px; vertical-align: top; }
+  table.meta td.k { background: #f6f3ec; color: #666; width: 76px; white-space: nowrap; }
+  .topbar { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .print-btn { padding: 7px 14px; border: 0; border-radius: 6px; background: #22384c; color: #fff; font-size: 12px; cursor: pointer; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-top: 10px; }
+  figure { margin: 0; break-inside: avoid; page-break-inside: avoid; }
+  figure img { width: 100%; height: 72mm; object-fit: contain; background: #f2f0ea; border: 1px solid #e2ddd2; }
+  figcaption { font-size: 9.5px; line-height: 1.55; color: #555; padding-top: 3px; }
+  figcaption .cap { display: flex; justify-content: space-between; gap: 8px; }
+  figcaption b { color: #b23a2b; font-size: 10px; }
+  figcaption .gps { font-family: Consolas, monospace; font-size: 8.5px; color: #777; }
+  figcaption .note { color: #333; }
+  .foot { margin-top: 14px; padding-top: 6px; border-top: 1px dashed #ccc; font-size: 9px; color: #888; }
+  @media print {
+    body { padding: 0; }
+    .print-btn { display: none; }
+  }
+`;
+
 /** 照片汇总 HTML（供 ZIP 内打印，或手机新窗口打印/存 PDF） */
 export function summaryHtml(batch, photos, { urlFor, exportedAt = Date.now() } = {}) {
   const total = photos.length;
@@ -100,32 +129,7 @@ export function summaryHtml(batch, photos, { urlFor, exportedAt = Date.now() } =
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>照片汇总 · ${escapeHtml(batch.batchNo)}</title>
-<style>
-  @page { size: A4; margin: 12mm 10mm; }
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 18px 16px 40px; font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif; color: #1b1d1c; background: #fff; font-size: 12px; }
-  .head { border-bottom: 2px solid #b23a2b; padding-bottom: 8px; margin-bottom: 10px; }
-  h1 { font-size: 18px; margin: 0 0 6px; letter-spacing: .04em; }
-  .no { font-family: Consolas, monospace; font-size: 12px; color: #444; }
-  table.meta { border-collapse: collapse; width: 100%; margin: 8px 0 12px; font-size: 11px; }
-  table.meta td { border: 1px solid #ddd; padding: 4px 6px; vertical-align: top; }
-  table.meta td.k { background: #f6f3ec; color: #666; width: 76px; white-space: nowrap; }
-  .topbar { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-  .print-btn { padding: 7px 14px; border: 0; border-radius: 6px; background: #22384c; color: #fff; font-size: 12px; cursor: pointer; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-top: 10px; }
-  figure { margin: 0; break-inside: avoid; page-break-inside: avoid; }
-  figure img { width: 100%; height: 72mm; object-fit: contain; background: #f2f0ea; border: 1px solid #e2ddd2; }
-  figcaption { font-size: 9.5px; line-height: 1.55; color: #555; padding-top: 3px; }
-  figcaption .cap { display: flex; justify-content: space-between; gap: 8px; }
-  figcaption b { color: #b23a2b; font-size: 10px; }
-  figcaption .gps { font-family: Consolas, monospace; font-size: 8.5px; color: #777; }
-  figcaption .note { color: #333; }
-  .foot { margin-top: 14px; padding-top: 6px; border-top: 1px dashed #ccc; font-size: 9px; color: #888; }
-  @media print {
-    body { padding: 0; }
-    .print-btn { display: none; }
-  }
-</style></head>
+<style>${PRINT_CSS}</style></head>
 <body>
   <div class="topbar">
     <div>
@@ -243,6 +247,7 @@ export async function createExportZip(batchIds) {
 
 /** 手机端打印照片汇总（新窗口 → 打印/另存 PDF） */
 export async function printBatches(batchIds) {
+  if (isNativeApp) return printBatchesNative(batchIds);
   const win = window.open('', '_blank');
   if (!win) return { ok: false, reason: 'blocked' };
 
@@ -265,29 +270,7 @@ export async function printBatches(batchIds) {
     win.document.open();
     win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
       <title>照片汇总</title>
-      <style>
-        @page { size: A4; margin: 12mm 10mm; }
-        * { box-sizing: border-box; }
-        body { margin: 0; padding: 18px 16px 40px; font-family: "Microsoft YaHei","PingFang SC",sans-serif; color:#1b1d1c; font-size:12px; }
-        .head { border-bottom:2px solid #b23a2b; padding-bottom:8px; margin-bottom:10px; }
-        h1 { font-size:18px; margin:0 0 6px; }
-        .no { font-family:Consolas,monospace; font-size:12px; color:#444; }
-        table.meta { border-collapse:collapse; width:100%; margin:8px 0 12px; font-size:11px; }
-        table.meta td { border:1px solid #ddd; padding:4px 6px; vertical-align:top; }
-        table.meta td.k { background:#f6f3ec; color:#666; width:76px; white-space:nowrap; }
-        .topbar { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
-        .print-btn { padding:7px 14px; border:0; border-radius:6px; background:#22384c; color:#fff; font-size:12px; }
-        .grid { display:grid; grid-template-columns:1fr 1fr; gap:5mm; margin-top:10px; }
-        figure { margin:0; break-inside:avoid; page-break-inside:avoid; }
-        figure img { width:100%; height:72mm; object-fit:contain; background:#f2f0ea; border:1px solid #e2ddd2; }
-        figcaption { font-size:9.5px; line-height:1.55; color:#555; padding-top:3px; }
-        figcaption .cap { display:flex; justify-content:space-between; gap:8px; }
-        figcaption b { color:#b23a2b; font-size:10px; }
-        figcaption .gps { font-family:Consolas,monospace; font-size:8.5px; color:#777; }
-        figcaption .note { color:#333; }
-        .foot { margin-top:14px; padding-top:6px; border-top:1px dashed #ccc; font-size:9px; color:#888; }
-        @media print { body { padding:0; } .print-btn { display:none; } }
-      </style></head><body>
+      <style>${PRINT_CSS}</style></head><body>
       <div style="text-align:right;margin-bottom:6px"><button class="print-btn" onclick="window.print()">打印 / 存为 PDF</button></div>
       ${sections.join('<hr style="border:0;border-top:1px dashed #ccc;margin:18px 0">')}
       <p style="font-size:10px;color:#888">提示：若打印对话框未自动弹出，请点右上角按钮，选择「另存为 PDF」。</p>
@@ -306,8 +289,41 @@ export async function printBatches(batchIds) {
   }
 }
 
-/* ---------------- 全量备份 / 恢复 ---------------- */
+/* ---------------- App 内打印（系统打印服务 → 另存为 PDF） ---------------- */
 
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result));
+    fr.onerror = () => reject(fr.error || new Error('读取图片失败'));
+    fr.readAsDataURL(blob);
+  });
+}
+
+async function printBatchesNative(batchIds) {
+  const sections = [];
+  for (const id of batchIds) {
+    const batch = await getBatch(id);
+    if (!batch) continue;
+    const photos = await listPhotos(id);
+    const cache = new Map();
+    for (const p of photos) cache.set(p.id, await blobToDataUrl(p.blob));
+    sections.push(summaryHtml(batch, photos, { urlFor: p => cache.get(p.id) })
+      .replace(/^[\s\S]*?<body>|<\/body>[\s\S]*$/g, ''));
+  }
+  if (!sections.length) return { ok: false, reason: 'empty' };
+
+  const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+    <title>照片汇总</title>
+    <style>${PRINT_CSS}</style></head><body>
+    ${sections.join('<div style="break-before:page;page-break-before:always"></div>')}
+    </body></html>`;
+
+  await nativePrintHtml(html, `照片汇总_${fmtDateTimeFile(Date.now())}`);
+  return { ok: true };
+}
+
+/* ---------------- 全量备份 / 恢复 ---------------- */
 export async function createBackup() {
   const [batches, photos, settings] = await Promise.all([listBatches(), allPhotos(), getSettings()]);
   const entries = {};

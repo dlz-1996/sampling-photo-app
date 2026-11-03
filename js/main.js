@@ -4,6 +4,7 @@ import { setRouter, startRouter, parseHash, navigate } from './router.js';
 import { closeSheet, toast, icon, escapeHtml } from './util.js';
 import { requirePersistence } from './db.js';
 import { APP_NAME, APP_VERSION } from './config.js';
+import { isNativeApp } from './native.js';
 
 import * as listView from './views/list.js';
 import * as batchView from './views/batch.js';
@@ -79,8 +80,8 @@ startRouter();
 // 申请持久化存储（不阻塞启动）
 setTimeout(() => { requirePersistence().catch(() => {}); }, 1500);
 
-// 注册 Service Worker（离线可用）
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+// 注册 Service Worker（离线可用；App 内资源已内置，跳过以免缓存旧版本）
+if (!isNativeApp && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   window.addEventListener('load', async () => {
     try {
       const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });

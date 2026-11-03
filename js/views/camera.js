@@ -1,8 +1,9 @@
 /* 相机页：拍照、连拍、相册导入、GPS 水印 */
 
 import { getBatch, getSettings, countPhotos, addPhoto, listPhotosByCategory } from '../db.js';
-import { CATEGORIES, cat, requiredOf, MAX_PER_CATEGORY } from '../categories.js';
-import { icon, escapeHtml, toast, uuid, createUrlPool } from '../util.js';
+import { CATEGORIES, cat, requiredOf, MAX_PER_CATEGORY, folderName } from '../categories.js';
+import { icon, escapeHtml, toast, uuid, createUrlPool, pad, fmtDateTimeFile, sanitizeFilename } from '../util.js';
+import { isNativeApp, nativeTakePhoto, nativeLocate, saveToGallery } from '../native.js';
 import { CameraController } from '../camera.js';
 import { processPhoto, videoFrame } from '../watermark.js';
 import { navigate, back } from '../router.js';
@@ -88,28 +89,65 @@ export async function render(root, { id, query }) {
   const pickAlbum = root.querySelector('#pick-album');
   const pickCamera = root.querySelector('#pick-camera');
 
+  if (native) {
+    video.style.display = 'none';
+    root.querySelector('#cam-grid').classList.remove('on');
+    root.querySelector('#cam-gridbtn').style.display = 'none';
+    root.querySelector('#cam-torch').style.display = 'none';
+    const ph = document.createElement('div');
+    ph.className = 'cam-native';
+    ph.innerHTML = `
+      <div class="cam-native-ico">${icon('camera', 44)}</div>
+      <div class="cam-native-t">点下方快门，调用系统相机</div>
+      <div class="cam-native-s">拍完自动加水印，并另存一份到相册</div>`;
+    root.querySelector('.cam-body').appendChild(ph);
+  }
+
   let gpsState = 'locating';
+
+  const native = isNativeApp();
+  let nativeFix = null;
+
+  function paintGps(state, fix) {
+    gpsState = state;
+    if (state === 'ok') {
+      gpsDot.className = 'gps-dot ok';
+      gpsText.textContent = `GPS ±${Math.round(fix.accuracy)}m`;
+      gpsText.title = `${fix.lat.toFixed(6)}, ${fix.lng.toFixed(6)}`;
+    } else if (state === 'locating') {
+      gpsDot.className = 'gps-dot';
+      gpsText.textContent = '定位中…';
+      gpsText.title = '';
+    } else {
+      gpsDot.className = 'gps-dot bad';
+      gpsText.textContent = state === 'denied' ? '未授权定位' : '定位不可用';
+    }
+  }
 
   const controller = new CameraController({
     video,
     onGps: ev => {
       if (!alive) return;
-      gpsState = ev.state;
-      if (ev.state === 'ok') {
-        gpsDot.className = 'gps-dot ok';
-        gpsText.textContent = `GPS ±${Math.round(ev.accuracy)}m`;
-        gpsText.title = `${ev.lat.toFixed(6)}, ${ev.lng.toFixed(6)}`;
-      } else if (ev.state === 'locating') {
-        gpsDot.className = 'gps-dot';
-        gpsText.textContent = '定位中…';
-        gpsText.title = '';
-      } else {
-        gpsDot.className = 'gps-dot bad';
-        gpsText.textContent = ev.state === 'denied' ? '未授权定位' : '定位不可用';
-      }
+      paintGps(ev.state, ev);
     },
     onError: () => {},
   });
+
+  /** App 内用原生定位，比 WebView 的 geolocation 稳 */
+  async function refreshNativeFix(timeout = 9000) {
+    if (!alive) return null;
+    try {
+      const fix = await nativeLocate(timeout);
+      if (!alive) return null;
+      nativeFix = fix;
+      paintGps('ok', fix);
+      return fix;
+    } catch (e) {
+      if (!alive) return null;
+      paintGps(e.name === 'denied' ? 'denied' : 'unavailable');
+      return null;
+    }
+  }
 
   function updateChips() {
     chips.querySelectorAll('[data-chip]').forEach(btn => {
@@ -148,6 +186,10 @@ export async function render(root, { id, query }) {
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
   async function waitFix(ms = 1500) {
+    if (native) {
+      if (nativeFix && Date.now() - nativeFix.at < 45000) return nativeFix;
+      return refreshNativeFix(Math.max(5000, ms));
+    }
     let fix = controller.currentFix();
     if (fix) return fix;
     if (gpsState !== 'locating') return null;
@@ -201,6 +243,11 @@ export async function render(root, { id, query }) {
     };
     await addPhoto(photo);
     counts[key] = (counts[key] || 0) + 1;
+    if (native) {
+      const dir = `${sanitizeFilename(batch.batchNo)}/${folderName(key)}`;
+      const name = `${pad(photo.seq, 3)}_${fmtDateTimeFile(takenAt)}.jpg`;
+      saveToGallery(photo.blob, dir, name).catch(err => console.warn('存相册失败', err));
+    }
     setLastPhoto(photo);
     updateChips();
     if (!silent) {
@@ -223,6 +270,7 @@ export async function render(root, { id, query }) {
       toast(`「${cat(selected).short}」最多 ${MAX_PER_CATEGORY} 张，请先删除`);
       return;
     }
+    if (native) return nativeCapture();
     busy = true;
     shutter.classList.add('busy');
     fireFlash();
@@ -238,6 +286,24 @@ export async function render(root, { id, query }) {
     } catch (err) {
       console.error(err);
       toast('保存失败：' + (err.message || err));
+    } finally {
+      busy = false;
+      shutter.classList.remove('busy');
+    }
+  }
+
+  async function nativeCapture() {
+    busy = true;
+    shutter.classList.add('busy');
+    try {
+      if (!nativeFix || Date.now() - nativeFix.at > 30000) await refreshNativeFix(6000);
+      const blob = await nativeTakePhoto();
+      if (!blob) return;
+      fireFlash();
+      await savePhoto(blob, 'camera');
+    } catch (err) {
+      console.error(err);
+      toast('拍照失败：' + (err.message || err), 3200);
     } finally {
       busy = false;
       shutter.classList.remove('busy');
@@ -322,11 +388,15 @@ export async function render(root, { id, query }) {
   const lastList = await listPhotosByCategory(id, selected);
   if (lastList.length) setLastPhoto(lastList[lastList.length - 1]);
 
-  try {
-    await controller.start();
-  } catch (err) {
-    console.warn('camera start failed', err);
-    showFallback(err);
+  if (native) {
+    refreshNativeFix(12000);
+  } else {
+    try {
+      await controller.start();
+    } catch (err) {
+      console.warn('camera start failed', err);
+      showFallback(err);
+    }
   }
 
   // 定位兜底：若页面本身有定位权限但 watch 失败，也在状态栏提示

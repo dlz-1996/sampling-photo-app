@@ -1,5 +1,7 @@
 /* 通用工具：图标、提示、弹层、格式化、CSV、文件分享 */
 
+import { isNativeApp, nativeShareBlob } from './native.js';
+
 export function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -84,6 +86,11 @@ export async function copyText(text) {
 }
 
 export function downloadBlob(blob, filename) {
+  if (isNativeApp) {
+    nativeShareBlob(blob, filename, blob.type || 'application/octet-stream', filename)
+      .catch(e => toast('保存失败：' + (e.message || e), 3200));
+    return;
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -97,7 +104,11 @@ export function downloadBlob(blob, filename) {
 
 /** 优先调用系统分享面板（可发微信/存文件），不支持则下载 */
 export async function shareFile(blob, filename, title = '') {
-  const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+  const type = blob.type || 'application/octet-stream';
+  if (isNativeApp) {
+    return nativeShareBlob(blob, filename, type, title || filename);
+  }
+  const file = new File([blob], filename, { type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title });

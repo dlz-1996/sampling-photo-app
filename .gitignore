@@ -1,0 +1,16 @@
+# Android 构建产物 / 打包进 APK 的网页副本
+android/app/src/main/assets/public/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+*.apk
+*.jks
+*.keystore
+*.p12
+
+# 系统
+.DS_Store
+Thumbs.db

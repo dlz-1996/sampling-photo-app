@@ -13,6 +13,17 @@
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="stylesheet" href="css/app.css">
+<script>
+/* 原生壳（APK）回调入口：必须在模块加载前就存在 */
+window.__nativePending = {};
+window.__nativeResolve = function (id, ok, payload) {
+  var p = window.__nativePending[id];
+  if (!p) return;
+  delete window.__nativePending[id];
+  if (ok) p[0](payload);
+  else p[1](new Error(typeof payload === 'string' ? payload : '原生调用失败'));
+};
+</script>
 </head>
 <body>
 <div id="app" class="app"></div>
