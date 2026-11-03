@@ -68,7 +68,10 @@ export async function nativeTakePhoto() {
 
 /** 取一次定位；失败抛错，err.name 为 denied / unavailable */
 export async function nativeLocate(timeoutMs = 8000) {
-  const r = await call('locate', String(timeoutMs));
+  let r = await call('locate', String(timeoutMs));
+  if (typeof r === 'string') {
+    try { r = JSON.parse(r); } catch { r = null; }
+  }
   if (!r || !Number.isFinite(r.lat) || !Number.isFinite(r.lng)) {
     const e = new Error('未获取到定位');
     e.name = 'unavailable';
