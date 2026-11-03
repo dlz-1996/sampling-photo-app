@@ -20,6 +20,7 @@ export async function render(root, { id, query }) {
   let lastPhoto = null;
   const pool = createUrlPool();
   let lastUrl = '';
+  const native = isNativeApp;
 
   root.innerHTML = `
     <div class="camera-screen">
@@ -104,8 +105,6 @@ export async function render(root, { id, query }) {
   }
 
   let gpsState = 'locating';
-
-  const native = isNativeApp();
   let nativeFix = null;
 
   function paintGps(state, fix) {
