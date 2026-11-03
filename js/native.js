@@ -59,9 +59,31 @@ function safeName(name) {
 
 /** 调系统相机拍一张，返回 Blob；用户取消返回 null */
 export async function nativeTakePhoto() {
-  const dataUrl = await call('takePhoto');
-  if (!dataUrl) return null;
-  return dataUrlToBlob(dataUrl);
+  const r = await call('takePhoto');
+  if (!r) return null;
+  const url = typeof r === 'string' ? r : r.url;
+  if (!url) return null;
+
+  // 旧版原生壳直接回传 dataURL
+  if (url.startsWith('data:')) return dataUrlToBlob(url);
+
+  // 新版回传同源 URL，避免上兆的 base64 走 evaluateJavascript
+  let res;
+  try {
+    res = await fetch(url, { cache: 'no-store' });
+  } catch (e) {
+    const err = new Error('照片读取失败（网络层）');
+    err.code = 'fetch';
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error('照片读取失败（' + res.status + '）');
+    err.code = 'fetch';
+    throw err;
+  }
+  const blob = await res.blob();
+  try { bridge.deleteCapture(String(url).split('/').pop()); } catch {}
+  return blob;
 }
 
 /* ---------------- 定位 ---------------- */

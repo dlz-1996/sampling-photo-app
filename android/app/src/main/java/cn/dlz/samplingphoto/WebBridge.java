@@ -2,6 +2,7 @@ package cn.dlz.samplingphoto;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -45,6 +46,20 @@ public class WebBridge {
     WebBridge(MainActivity act, WebView web) {
         this.act = act;
         this.web = web;
+        new Thread(this::cleanupCaptures).start();
+    }
+
+    /** 清理一天前的相机缓存，避免占空间 */
+    private void cleanupCaptures() {
+        try {
+            File dir = new File(act.getCacheDir(), "capture");
+            File[] files = dir.listFiles();
+            if (files == null) return;
+            long limit = System.currentTimeMillis() - 24L * 3600 * 1000;
+            for (File f : files) {
+                if (f.isFile() && f.lastModified() < limit) f.delete();
+            }
+        } catch (Throwable ignored) { }
     }
 
     /* ---------------- 回调 ---------------- */
@@ -127,7 +142,7 @@ public class WebBridge {
     private void startCamera(String id) {
         if (!act.hasPermission(Manifest.permission.CAMERA)) {
             act.askPermissions();
-            resolveFail(id, "denied", "相机权限未授予，请在系统设置里允许后重试");
+            resolveFail(id, "permission", "请允许相机权限后再点一次快门");
             return;
         }
         try {
@@ -139,16 +154,22 @@ public class WebBridge {
 
             Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
             i.putExtra(MediaStore.EXTRA_OUTPUT, uri);
+            // 部分相机应用只认 ClipData 里的授权，不设会写不进去
+            i.setClipData(ClipData.newRawUri(MediaStore.EXTRA_OUTPUT, uri));
             i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            if (i.resolveActivity(act.getPackageManager()) == null) {
-                resolveFail(id, "nocamera", "没有找到可用的相机应用");
-                return;
-            }
+
             cameraCbId = id;
             cameraFile = f;
+            // 不再用 resolveActivity 预判：Android 11+ 包可见性会让它误报 null
             act.startActivityForResult(i, REQ_CAMERA);
+        } catch (android.content.ActivityNotFoundException e) {
+            cameraCbId = null;
+            cameraFile = null;
+            resolveFail(id, "nocamera", "手机上没有可用的相机应用");
         } catch (Throwable t) {
+            cameraCbId = null;
+            cameraFile = null;
             resolveFail(id, "camera", "无法打开相机：" + msg(t));
         }
     }
@@ -170,9 +191,13 @@ public class WebBridge {
 
         new Thread(() -> {
             try {
-                String dataUrl = ImageUtil.toDataUrl(f, 2048, 92);
+                // EXIF 转正 + 缩放，输出到 cache/capture，再以同源 URL 交给网页
+                File out = ImageUtil.process(f, 2048, 92);
                 f.delete();
-                resolve(id, true, JSONObject.quote(dataUrl));
+                JSONObject o = new JSONObject();
+                o.put("url", "https://" + MainActivity.HOST + "/capture/" + out.getName());
+                o.put("size", out.length());
+                resolve(id, true, o.toString());
             } catch (Throwable t) {
                 f.delete();
                 resolveFail(id, "image", "读取照片失败：" + msg(t));
@@ -291,7 +316,6 @@ public class WebBridge {
     }
 
     /* ---------------- 存相册 ---------------- */
-
     @JavascriptInterface
     public void saveImage(final String id, final String b64, final String subDir,
                           final String name) {
@@ -309,6 +333,15 @@ public class WebBridge {
     }
 
     /* ---------------- 临时文件 / 分享 / 打印 ---------------- */
+
+    /** 网页 fetch 完照片后通知删除缓存 */
+    @JavascriptInterface
+    public void deleteCapture(String name) {
+        try {
+            File f = new File(new File(act.getCacheDir(), "capture"), safeName(name));
+            if (f.isFile()) f.delete();
+        } catch (Throwable ignored) { }
+    }
 
     @JavascriptInterface
     public String beginFile(String name) {

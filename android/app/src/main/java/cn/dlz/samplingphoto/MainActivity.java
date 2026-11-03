@@ -29,6 +29,8 @@ import android.widget.FrameLayout;
 
 import androidx.webkit.WebViewAssetLoader;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -75,6 +77,7 @@ public class MainActivity extends Activity {
         final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
                 .setDomain(HOST)
                 .addPathHandler("/assets/", new AssetHandler(this))
+                .addPathHandler("/capture/", new CaptureHandler(this))
                 .build();
 
         webView.setWebViewClient(new WebViewClient() {
@@ -324,6 +327,43 @@ public class MainActivity extends Activity {
             if (s.endsWith(".woff2")) return "font/woff2";
             if (s.endsWith(".txt")) return "text/plain";
             return "application/octet-stream";
+        }
+    }
+
+    /** 把 cache/capture 下的照片以 https://HOST/capture/xxx.jpg 暴露给网页 fetch */
+    static class CaptureHandler implements WebViewAssetLoader.PathHandler {
+        private final Context ctx;
+
+        CaptureHandler(Context ctx) {
+            this.ctx = ctx;
+        }
+
+        @Override
+        public WebResourceResponse handle(String path) {
+            String name = path == null ? "" : path;
+            while (name.startsWith("/")) name = name.substring(1);
+            if (name.isEmpty() || name.contains("..") || name.contains("/") || name.contains("\\")) {
+                return notFound();
+            }
+            File f = new File(new File(ctx.getCacheDir(), "capture"), name);
+            if (!f.isFile()) return notFound();
+            try {
+                FileInputStream in = new FileInputStream(f);
+                WebResourceResponse r = new WebResourceResponse("image/jpeg", null, in);
+                java.util.Map<String, String> headers = new java.util.HashMap<>();
+                headers.put("Cache-Control", "no-store");
+                headers.put("Content-Length", String.valueOf(f.length()));
+                r.setResponseHeaders(headers);
+                return r;
+            } catch (java.io.IOException e) {
+                return notFound();
+            }
+        }
+
+        private WebResourceResponse notFound() {
+            return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found",
+                    new java.util.HashMap<String, String>(),
+                    new java.io.ByteArrayInputStream("not found".getBytes()));
         }
     }
 }

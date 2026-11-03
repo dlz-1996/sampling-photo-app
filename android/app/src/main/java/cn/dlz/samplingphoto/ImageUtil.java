@@ -8,12 +8,45 @@ import android.util.Base64;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 
 /** 读相机原图：按 EXIF 转正、缩到长边 maxEdge、压成 JPEG 再交给网页 */
 public class ImageUtil {
 
     public static String toDataUrl(File file, int maxEdge, int quality) throws IOException {
+        Bitmap bmp = load(file, maxEdge);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        bmp.compress(Bitmap.CompressFormat.JPEG, clampQuality(quality), out);
+        bmp.recycle();
+        return "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(),
+                Base64.NO_WRAP);
+    }
+
+    /** 转正 + 缩放后写到同目录的 p_ 前缀文件，返回该文件 */
+    public static File process(File file, int maxEdge, int quality) throws IOException {
+        Bitmap bmp = load(file, maxEdge);
+        File out = new File(file.getParentFile(), "p_" + file.getName());
+        FileOutputStream fos = new FileOutputStream(out);
+        try {
+            if (!bmp.compress(Bitmap.CompressFormat.JPEG, clampQuality(quality), fos)) {
+                throw new IOException("照片编码失败");
+            }
+            fos.flush();
+        } finally {
+            try { fos.close(); } catch (Throwable ignored) { }
+            bmp.recycle();
+        }
+        if (!out.isFile() || out.length() == 0) throw new IOException("照片写入失败");
+        return out;
+    }
+
+    private static int clampQuality(int quality) {
+        return Math.max(1, Math.min(quality, 100));
+    }
+
+    /** 按 EXIF 转正、缩到长边 maxEdge，返回可安全复用的 Bitmap */
+    private static Bitmap load(File file, int maxEdge) throws IOException {
         String path = file.getAbsolutePath();
 
         BitmapFactory.Options bounds = new BitmapFactory.Options();
@@ -68,10 +101,6 @@ public class ImageUtil {
             bmp = rotated;
         }
 
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        bmp.compress(Bitmap.CompressFormat.JPEG, Math.max(1, Math.min(quality, 100)), out);
-        bmp.recycle();
-        return "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(),
-                Base64.NO_WRAP);
+        return bmp;
     }
 }

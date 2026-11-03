@@ -20,8 +20,17 @@ window.__nativeResolve = function (id, ok, payload) {
   var p = window.__nativePending[id];
   if (!p) return;
   delete window.__nativePending[id];
-  if (ok) p[0](payload);
-  else p[1](new Error(typeof payload === 'string' ? payload : '原生调用失败'));
+  if (ok) { p[0](payload); return; }
+  var msg = '原生调用失败', code = '';
+  if (typeof payload === 'string') {
+    msg = payload;
+  } else if (payload && typeof payload === 'object') {
+    if (payload.message) msg = payload.message;
+    if (payload.code) code = payload.code;
+  }
+  var err = new Error(msg);
+  if (code) err.code = code;
+  p[1](err);
 };
 </script>
 </head>

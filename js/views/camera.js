@@ -21,6 +21,7 @@ export async function render(root, { id, query }) {
   const pool = createUrlPool();
   let lastUrl = '';
   const native = isNativeApp;
+  let webFallback = false;   // 原生相机不可用时，退回 App 内置相机
 
   root.innerHTML = `
     <div class="camera-screen">
@@ -143,7 +144,7 @@ export async function render(root, { id, query }) {
       return fix;
     } catch (e) {
       if (!alive) return null;
-      paintGps(e.name === 'denied' ? 'denied' : 'unavailable');
+      paintGps(e.code === 'denied' || e.name === 'denied' ? 'denied' : 'unavailable');
       return null;
     }
   }
@@ -269,7 +270,7 @@ export async function render(root, { id, query }) {
       toast(`「${cat(selected).short}」最多 ${MAX_PER_CATEGORY} 张，请先删除`);
       return;
     }
-    if (native) return nativeCapture();
+    if (native && !webFallback) return nativeCapture();
     busy = true;
     shutter.classList.add('busy');
     fireFlash();
@@ -291,6 +292,26 @@ export async function render(root, { id, query }) {
     }
   }
 
+  /** 系统相机打不开时，就地切回 App 内置相机 */
+  async function enableWebCamera() {
+    if (webFallback) return true;
+    webFallback = true;
+    const ph = root.querySelector('.cam-native');
+    if (ph) ph.style.display = 'none';
+    video.style.display = '';
+    root.querySelector('#cam-grid').classList.add('on');
+    root.querySelector('#cam-gridbtn').style.display = '';
+    root.querySelector('#cam-torch').style.display = '';
+    try {
+      await controller.start();
+      return true;
+    } catch (e) {
+      console.warn('内置相机启动失败', e);
+      showFallback(e);
+      return false;
+    }
+  }
+
   async function nativeCapture() {
     busy = true;
     shutter.classList.add('busy');
@@ -302,7 +323,16 @@ export async function render(root, { id, query }) {
       await savePhoto(blob, 'camera');
     } catch (err) {
       console.error(err);
-      toast('拍照失败：' + (err.message || err), 3200);
+      const code = err.code || 'error';
+      if (code === 'nocamera' || code === 'camera') {
+        toast('系统相机打不开，已切换到内置相机', 3200);
+        const ok = await enableWebCamera();
+        if (!ok) toast('内置相机也不可用，请点「相册」导入照片', 4000);
+      } else if (code === 'permission') {
+        toast('请在权限提示里允许相机，然后再点一次快门', 4000);
+      } else {
+        toast(`拍照失败[${code}]：${err.message || err}`, 4000);
+      }
     } finally {
       busy = false;
       shutter.classList.remove('busy');
@@ -337,6 +367,12 @@ export async function render(root, { id, query }) {
     fallback.hidden = false;
     shutter.style.opacity = '.35';
     shutter.style.pointerEvents = 'none';
+    if (native) {
+      fallbackMsg.textContent = err?.name === 'NotAllowedError'
+        ? '相机权限被拒绝。请到「设置 → 应用 → 抽样拍照 → 权限」允许相机，再重新打开本页。'
+        : '内置相机没能启动。可以直接点下方「从相册选择」导入照片，或返回后重试。';
+      return;
+    }
     if (err?.name === 'NotAllowedError') {
       fallbackMsg.textContent = '相机权限被拒绝。可在 Chrome 地址栏左侧的锁形图标里允许相机，或直接用系统相机拍照。';
     } else if (err?.name === 'NotSupportedError' || !window.isSecureContext) {
