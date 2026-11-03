@@ -11,6 +11,11 @@ import { navigate, back } from '../router.js';
 export async function render(root, { id, query }) {
   const batch = await getBatch(id);
   if (!batch) { toast('批次不存在'); navigate('/', { replace: true }); return; }
+  if (batch.status === 'submitted') {
+    toast('该批次已提交锁定，请先在批次详情解锁', 3200);
+    navigate(`/batch/${id}`, { replace: true });
+    return;
+  }
 
   const settings = await getSettings();
   let counts = (await countPhotos(id)).counts;

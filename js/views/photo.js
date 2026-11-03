@@ -9,6 +9,7 @@ export async function render(root, { id }) {
   let photo = await getPhoto(id);
   if (!photo) { toast('照片不存在'); navigate('/', { replace: true }); return; }
   const batch = await getBatch(photo.batchId);
+  const locked = !!(batch && batch.status === 'submitted');
   let photos = await listPhotos(photo.batchId);
   const pool = createUrlPool();
   let idx = photos.findIndex(p => p.id === photo.id);
@@ -59,8 +60,9 @@ export async function render(root, { id }) {
       </div>
       <div class="viewer-actions">
         <button class="btn" id="v-copy">${icon('copy', 16)} 复制校验值</button>
-        <button class="btn danger" id="v-del">${icon('trash', 16)} 删除</button>
+        <button class="btn danger" id="v-del" ${locked ? 'disabled' : ''}>${icon('trash', 16)} 删除</button>
       </div>
+      ${locked ? `<div class="tiny" style="margin-top:8px;color:rgba(244,241,234,.55)">已提交锁定：如需删除或改备注，请先在批次详情解锁。</div>` : ''}
     `;
 
     root.querySelector('#v-prev').onclick = () => go(-1);
@@ -69,8 +71,14 @@ export async function render(root, { id }) {
       const ok = await copyText(p.sha256 || '');
       toast(ok ? '校验值已复制' : '复制失败');
     };
-    root.querySelector('#v-del').onclick = remove;
-    root.querySelector('#v-note').onclick = editNote;
+    root.querySelector('#v-del').onclick = () => {
+      if (locked) { toast('已提交锁定，请先在批次详情解锁', 3000); return; }
+      remove();
+    };
+    root.querySelector('#v-note').onclick = () => {
+      if (locked) { toast('已提交锁定，解锁后可修改备注', 3000); return; }
+      editNote();
+    };
   }
 
   function go(dir) {
@@ -82,6 +90,7 @@ export async function render(root, { id }) {
   }
 
   async function editNote() {
+    if (locked) { toast('已提交锁定，解锁后可修改备注', 3000); return; }
     const p = photos[idx];
     const s = openSheet({
       title: '照片备注',
@@ -100,6 +109,7 @@ export async function render(root, { id }) {
   }
 
   async function remove() {
+    if (locked) { toast('已提交锁定，请先在批次详情解锁', 3000); return; }
     const p = photos[idx];
     const ok = await confirmDialog({
       title: '删除照片',
