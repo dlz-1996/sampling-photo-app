@@ -12,6 +12,10 @@ on:
       - '.github/workflows/android.yml'
   workflow_dispatch:
 
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -24,22 +28,29 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK packages
+      - name: Check Android SDK
         run: |
-          set +e
-          yes | sdkmanager --install "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1
-          set -e
-          sdkmanager --list_installed | grep -E "platforms;android-34|build-tools;34\.0\.0"
+          echo "platforms:"; ls "$ANDROID_HOME/platforms" || true
+          echo "build-tools:"; ls "$ANDROID_HOME/build-tools" || true
+          if [ ! -d "$ANDROID_HOME/platforms/android-34" ]; then
+            echo "安装 android-34 ..."
+            set +e
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-34" > /dev/null 2>&1
+            set -e
+          fi
+          if [ ! -d "$ANDROID_HOME/build-tools/34.0.0" ]; then
+            echo "安装 build-tools 34.0.0 ..."
+            set +e
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "build-tools;34.0.0" > /dev/null 2>&1
+            set -e
+          fi
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
 
       - name: Sync web assets into APK
         run: |
           rm -rf android/app/src/main/assets/public
           mkdir -p android/app/src/main/assets/public
           cp -r index.html manifest.webmanifest sw.js css js icons android/app/src/main/assets/public/
-          echo "打包进 APK 的网页文件："
           du -sh android/app/src/main/assets/public
           find android/app/src/main/assets/public -maxdepth 1 -mindepth 1 | sort
 
@@ -55,6 +66,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.p12"
             export KEYSTORE_FILE="$RUNNER_TEMP/release.p12"
