@@ -183,9 +183,15 @@ public class WebBridge {
         cameraFile = null;
         if (id == null) return;
 
-        if (resultCode != Activity.RESULT_OK || f == null || !f.exists() || f.length() == 0) {
+        if (resultCode != Activity.RESULT_OK) {
             if (f != null) f.delete();
-            resolve(id, true, "null");   // 用户取消
+            resolve(id, true, "null");   // 用户主动取消
+            return;
+        }
+        if (f == null || !f.exists() || f.length() == 0) {
+            if (f != null) f.delete();
+            // 有些相机应用返回成功却没写文件
+            resolveFail(id, "empty", "相机没有返回照片，请重试或改用「相册」导入");
             return;
         }
 
