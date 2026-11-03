@@ -1,4 +1,3 @@
-export const APP_VERSION = '1.0.6';
+export const APP_VERSION = '1.0.7';
 export const APP_NAME = '抽样拍照';
-export const BUILD_DATE = '2026-10-28';
-
+export const BUILD_DATE = '2026-11-03';
