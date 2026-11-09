@@ -154,8 +154,12 @@ export function parseCSV(text) {
 }
 
 export function toCSV(rows) {
+  // 防公式注入：Excel 会把以 = + - @ 开头的单元格当公式执行
+  const RISKY = /^[\t\r ]*[=+\-@]/;
   const esc = v => {
-    const s = String(v ?? '');
+    let s = String(v ?? '');
+    const isNumber = typeof v === 'number' && Number.isFinite(v);
+    if (!isNumber && RISKY.test(s)) s = "'" + s;
     return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return '\uFEFF' + rows.map(r => r.map(esc).join(',')).join('\r\n') + '\r\n';

@@ -6,10 +6,15 @@ android/app/build/
 android/local.properties
 android/.idea/
 *.iml
+
+# 安装包与签名材料（泄露即可被冒充发布升级包）
 *.apk
 *.jks
 *.keystore
 *.p12
+*.b64
+password.txt
+keystore.b64
 
 # 系统
 .DS_Store
