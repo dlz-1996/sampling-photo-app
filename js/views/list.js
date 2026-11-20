@@ -1,8 +1,8 @@
 /* 批次列表页 */
 
-import { listBatches, countPhotos, putBatch, getSettings } from '../db.js';
+import { listBatches, countPhotos, putBatch, getSettings, saveSettings } from '../db.js';
 import { CATEGORIES, requiredOf, statusOf } from '../categories.js';
-import { icon, escapeHtml, toast, openSheet, confirmDialog } from '../util.js';
+import { icon, escapeHtml, toast, openSheet, confirmDialog, fmtDate } from '../util.js';
 import { openBatchForm } from '../forms.js';
 import { navigate } from '../router.js';
 import { importBatchCSV } from '../importer.js';
@@ -34,6 +34,7 @@ export async function render(root) {
           <div class="segmented" id="filters">
             ${FILTERS.map((f, i) => `<button data-filter="${f.key}" class="${i === 0 ? 'active' : ''}">${f.label}</button>`).join('')}
           </div>
+          <div class="banner warn" id="backup-warn" hidden></div>
         </div>
         <div id="list" style="margin-top:12px"></div>
         <div class="footnote" style="margin-top:18px;text-align:center">
@@ -61,6 +62,24 @@ export async function render(root) {
     if (!alive) return;
     state.rows = rows;
     paint();
+    paintBackupWarn(rows);
+  }
+
+  /** 有照片且超过 7 天没备份时，在首页提示一次 */
+  async function paintBackupWarn(rows) {
+    const el = root.querySelector('#backup-warn');
+    if (!el) return;
+    const total = rows.reduce((a, r) => a + (r.total || 0), 0);
+    const settings = await getSettings();
+    const last = Number(settings.lastBackupAt || 0);
+    const stale = total > 0 && (!last || Date.now() - last > 7 * 86400000);
+    if (!stale) { el.hidden = true; return; }
+    const days = last ? Math.floor((Date.now() - last) / 86400000) : null;
+    el.hidden = false;
+    el.innerHTML = `${icon('alert', 17)}
+      <div>${last ? `上次备份是 ${fmtDate(last)}（${days} 天前）` : '还没有备份过'}，建议做一次全量备份。
+        <button class="link" id="backup-go">去备份</button></div>`;
+    el.querySelector('#backup-go').onclick = () => navigate('/settings');
   }
 
   function missingOf(row) {

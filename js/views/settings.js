@@ -40,6 +40,10 @@ export async function render(root) {
           <input type="text" id="set-inspector" value="${escapeHtml(settings.inspectorDefault || '')}" placeholder="姓名" style="width:120px">
         </div>
         <div class="set-row">
+          <div class="grow"><div class="s-label">默认市场监督管理局</div><div class="s-desc">新建批次自动带出；用过的会记住最后一次</div></div>
+          <input type="text" id="set-bureau" value="${escapeHtml(settings.bureauDefault || '')}" placeholder="如 南京市浦口区市场监督管理局" style="width:240px">
+        </div>
+        <div class="set-row">
           <div class="grow"><div class="s-label">每类最低张数</div><div class="s-desc">新建批次生效，单类上限 ${MAX_PER_CATEGORY} 张</div></div>
           <select id="set-required">
             ${Array.from({ length: MAX_PER_CATEGORY }, (_, i) => i + 1)
@@ -134,6 +138,7 @@ export async function render(root) {
     };
 
     body.querySelector('#set-inspector').addEventListener('change', e => save({ inspectorDefault: e.target.value.trim() }));
+    body.querySelector('#set-bureau').addEventListener('change', e => save({ bureauDefault: e.target.value.trim() }));
     body.querySelector('#set-required').addEventListener('change', async e => {
       await save({ required: Number(e.target.value) });
     });

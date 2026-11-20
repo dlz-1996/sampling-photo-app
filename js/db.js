@@ -10,6 +10,7 @@ const CAT_ORDER = Object.fromEntries(
 
 export const DEFAULT_SETTINGS = {
   inspectorDefault: '',
+  bureauDefault: '',
   maxEdge: 1600,
   quality: 0.85,
   showTime: true,

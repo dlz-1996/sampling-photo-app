@@ -1,16 +1,24 @@
 /* 表单弹层：新建/编辑批次、快速改抽样人、备注 */
 
-import { getBatch, listBatches, putBatch, getSettings } from './db.js';
+import { getBatch, listBatches, putBatch, getSettings, saveSettings } from './db.js';
 import { CATEGORIES, MAX_PER_CATEGORY, defaultRequired } from './categories.js';
 import { escapeHtml, openSheet, closeSheet, toast, uuid, icon } from './util.js';
 
-function field(name, label, value = '', { required = false, placeholder = '', type = 'text', hint = '' } = {}) {
+function field(name, label, value = '', { required = false, placeholder = '', type = 'text', hint = '', list = false } = {}) {
   return `<div class="field">
     <label for="f-${name}">${escapeHtml(label)}${required ? ' <span class="req">*</span>' : ''}</label>
     <input id="f-${name}" name="${name}" type="${type}" value="${escapeHtml(value)}"
-      placeholder="${escapeHtml(placeholder)}" ${required ? 'required' : ''} autocomplete="off">
+      placeholder="${escapeHtml(placeholder)}" ${required ? 'required' : ''}
+      ${list ? `list="dl-${name}"` : ''} autocomplete="off">
     ${hint ? `<div class="hint">${escapeHtml(hint)}</div>` : ''}
   </div>`;
+}
+
+function datalist(name, values) {
+  if (!values || !values.length) return '';
+  return `<datalist id="dl-${name}">${
+    values.map(v => `<option value="${escapeHtml(v)}"></option>`).join('')
+  }</datalist>`;
 }
 
 /**
@@ -18,6 +26,31 @@ function field(name, label, value = '', { required = false, placeholder = '', ty
  */
 export async function openBatchForm(existing = null) {
   const settings = await getSettings();
+  const all = await listBatches();
+
+  // 常用值：从已有批次里按“最近使用”去重，作为下拉建议
+  const uniq = (key, cap = 30) => {
+    const seen = new Set();
+    const out = [];
+    for (const x of all) {
+      const v = String(x[key] || '').trim();
+      if (v && !seen.has(v)) { seen.add(v); out.push(v); }
+      if (out.length >= cap) break;
+    }
+    return out;
+  };
+  const suggestions = {
+    bureau: uniq('bureau'),
+    producer: uniq('producer'),
+    product: uniq('product'),
+    sampleName: uniq('sampleName'),
+    specModel: uniq('specModel'),
+    sampledUnit: uniq('sampledUnit'),
+    inspector: uniq('inspector'),
+  };
+  const recentBureau = suggestions.bureau[0] || '';
+  const defaultBureau = settings.bureauDefault || recentBureau;
+
   const b = existing || {
     batchNo: '',
     inspector: settings.inspectorDefault || '',
@@ -27,7 +60,7 @@ export async function openBatchForm(existing = null) {
     sampleName: '',
     specModel: '',
     reportNo: '',
-    bureau: '',
+    bureau: defaultBureau,
     note: '',
   };
   const reqCount = Number(existing?.required?.[CATEGORIES[0].key] || settings.required || 1);
@@ -41,17 +74,17 @@ export async function openBatchForm(existing = null) {
           ${field('batchNo', '抽查批次号', b.batchNo, { required: true, placeholder: '如 浦口区市监质抽[2026]002号0025' })}
         </div>
         <div class="field-row">
-          ${field('inspector', '抽样人', b.inspector, { required: true, placeholder: '本批次抽样人员' })}
-          ${field('specModel', '规格型号', b.specModel, { placeholder: '如 MFZ/ABC4 / 8-65-20' })}
+          ${field('inspector', '抽样人', b.inspector, { required: true, placeholder: '本批次抽样人员', list: true })}
+          ${field('specModel', '规格型号', b.specModel, { placeholder: '如 MFZ/ABC4 / 8-65-20', list: true })}
         </div>
-        ${field('sampledUnit', '被抽样单位（抽样地点）', b.sampledUnit, { placeholder: '如 江北新区久之顺建材经营部' })}
-        ${field('producer', '生产公司', b.producer)}
+        ${field('sampledUnit', '被抽样单位（抽样地点）', b.sampledUnit, { placeholder: '如 江北新区久之顺建材经营部', list: true })}
+        ${field('producer', '生产公司', b.producer, { list: true })}
         <div class="field-row">
-          ${field('product', '产品大类', b.product, { placeholder: '如 手提式灭火器' })}
-          ${field('sampleName', '样品名称', b.sampleName, { placeholder: '如 手提式干粉灭火器' })}
+          ${field('product', '产品大类', b.product, { placeholder: '如 手提式灭火器', list: true })}
+          ${field('sampleName', '样品名称', b.sampleName, { placeholder: '如 手提式干粉灭火器', list: true })}
         </div>
         <div class="field-row">
-          ${field('bureau', '市场监督管理局', b.bureau, { placeholder: '如 南京市浦口区市场监督管理局' })}
+          ${field('bureau', '市场监督管理局', b.bureau, { placeholder: '如 南京市浦口区市场监督管理局', list: true })}
           ${field('reportNo', '报告编号', b.reportNo, { placeholder: '选填' })}
         </div>
         <div class="field">
@@ -66,6 +99,7 @@ export async function openBatchForm(existing = null) {
           <label for="f-note">备注</label>
           <textarea id="f-note" name="note" placeholder="选填，如抽样现场情况">${escapeHtml(b.note || '')}</textarea>
         </div>
+        ${Object.entries(suggestions).map(([k, v]) => datalist(k, v)).join('')}
         <div class="banner info" style="margin-top:4px">
           ${icon('info', 17)}
           <div>批次信息仅保存在本机；照片文件不会自动上传。导出后可在电脑端按批次归档。</div>
@@ -123,11 +157,23 @@ export async function openBatchForm(existing = null) {
         createdAt: existing?.createdAt || Date.now(),
       };
       await putBatch(data);
+      if (data.bureau && data.bureau !== settings.bureauDefault) {
+        try { await saveSettings({ bureauDefault: data.bureau }); } catch {}
+      }
       saved = true;
       closeSheet();
       toast(existing ? '已保存' : '批次已创建');
       resolve(true);
     };
+
+    // 输入框回车 = 保存（中文输入法回车选词时不触发）
+    el.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' || e.isComposing) return;
+        e.preventDefault();
+        el.querySelector('[data-save]').click();
+      });
+    });
 
     setTimeout(() => { if (!existing) batchNoInput.focus(); }, 220);
   });

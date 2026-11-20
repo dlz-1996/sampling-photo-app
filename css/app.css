@@ -525,6 +525,9 @@ h1, h2, h3, p { margin: 0; }
 }
 .banner.info { background: #e8eef3; color: #2c4d63; border-color: #d2e0e8; }
 .banner.ok { background: #e6efe9; color: #2b6046; border-color: #cfdfd4; }
+.banner.warn { background: #fbf1dc; color: #79530f; border-color: #ecdcb8; }
+
+[hidden] { display: none !important; }
 
 .footnote { font-size: 11px; color: var(--muted); line-height: 1.7; padding: 8px 2px; }
 
