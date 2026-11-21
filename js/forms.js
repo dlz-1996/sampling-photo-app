@@ -22,9 +22,10 @@ function datalist(name, values) {
 }
 
 /**
- * 新建 / 编辑批次。保存成功后 resolve(true)。
+ * 新建 / 编辑批次。保存成功后 resolve(批次对象)，取消 resolve(false)。
+ * asNew=true 时：沿用 existing 的字段预填，但作为新批次创建（批次号清空）。
  */
-export async function openBatchForm(existing = null) {
+export async function openBatchForm(existing = null, { asNew = false } = {}) {
   const settings = await getSettings();
   const all = await listBatches();
 
@@ -51,24 +52,27 @@ export async function openBatchForm(existing = null) {
   const recentBureau = suggestions.bureau[0] || '';
   const defaultBureau = settings.bureauDefault || recentBureau;
 
-  const b = existing || {
+  const editing = !!existing && !asNew;
+  const src = existing || {};
+  const b = editing ? { ...existing } : {
     batchNo: '',
-    inspector: settings.inspectorDefault || '',
-    sampledUnit: '',
-    producer: '',
-    product: '',
-    sampleName: '',
-    specModel: '',
-    reportNo: '',
-    bureau: defaultBureau,
+    inspector: src.inspector || settings.inspectorDefault || '',
+    sampledUnit: src.sampledUnit || '',
+    producer: src.producer || '',
+    product: src.product || '',
+    sampleName: src.sampleName || '',
+    specModel: src.specModel || '',
+    reportNo: src.reportNo || '',
+    bureau: src.bureau || defaultBureau,
     note: '',
   };
-  const reqCount = Number(existing?.required?.[CATEGORIES[0].key] || settings.required || 1);
+  const reqCount = Number(
+    (editing ? existing.required : src.required)?.[CATEGORIES[0].key] || settings.required || 1);
 
   return new Promise(resolve => {
     let saved = false;
     const sheet = openSheet({
-      title: existing ? '编辑批次' : '新建批次',
+      title: editing ? '编辑批次' : (asNew ? '复制新建批次' : '新建批次'),
       body: `
         <div class="field-row">
           ${field('batchNo', '抽查批次号', b.batchNo, { required: true, placeholder: '如 浦口区市监质抽[2026]002号0025' })}
@@ -106,7 +110,7 @@ export async function openBatchForm(existing = null) {
         </div>
       `,
       foot: `<button class="btn ghost" data-cancel>取消</button>
-             <button class="btn primary" data-save>${existing ? '保存修改' : '创建批次'}</button>`,
+             <button class="btn primary" data-save>${editing ? '保存修改' : (asNew ? '创建副本' : '创建批次')}</button>`,
       onClose: () => { if (!saved) resolve(false); },
     });
 
@@ -114,7 +118,7 @@ export async function openBatchForm(existing = null) {
     const val = name => el.querySelector(`[name="${name}"]`)?.value.trim() || '';
     const batchNoInput = el.querySelector('[name="batchNo"]');
 
-    if (existing?.status === 'submitted') {
+    if (editing && existing.status === 'submitted') {
       batchNoInput.readOnly = true;
       batchNoInput.style.background = 'var(--paper-2)';
       const reqSel = el.querySelector('[name="required"]');
@@ -135,13 +139,13 @@ export async function openBatchForm(existing = null) {
       if (!inspector) { el.querySelector('[name="inspector"]').focus(); toast('请填写抽样人'); return; }
 
       const all = await listBatches();
-      const dup = all.find(x => x.batchNo === batchNo && x.id !== existing?.id);
+      const dup = all.find(x => x.batchNo === batchNo && x.id !== (editing ? existing.id : null));
       if (dup) { toast('该批次号已存在，请勿重复创建'); return; }
 
       const n = Number(val('required')) || 1;
       const data = {
-        ...(existing || {}),
-        id: existing?.id || uuid(),
+        ...(editing ? existing : {}),
+        id: editing ? existing.id : uuid(),
         batchNo,
         inspector,
         sampledUnit: val('sampledUnit'),
@@ -153,8 +157,8 @@ export async function openBatchForm(existing = null) {
         reportNo: val('reportNo'),
         note: val('note'),
         required: defaultRequired(n),
-        status: existing?.status || 'draft',
-        createdAt: existing?.createdAt || Date.now(),
+        status: editing ? existing.status : 'draft',
+        createdAt: editing ? existing.createdAt : Date.now(),
       };
       await putBatch(data);
       if (data.bureau && data.bureau !== settings.bureauDefault) {
@@ -162,8 +166,8 @@ export async function openBatchForm(existing = null) {
       }
       saved = true;
       closeSheet();
-      toast(existing ? '已保存' : '批次已创建');
-      resolve(true);
+      toast(editing ? '已保存' : '批次已创建');
+      resolve(data);
     };
 
     // 输入框回车 = 保存（中文输入法回车选词时不触发）
@@ -175,7 +179,7 @@ export async function openBatchForm(existing = null) {
       });
     });
 
-    setTimeout(() => { if (!existing) batchNoInput.focus(); }, 220);
+    setTimeout(() => { if (!editing) batchNoInput.focus(); }, 220);
   });
 }
 

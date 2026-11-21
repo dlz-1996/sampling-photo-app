@@ -31,6 +31,9 @@ export async function render(root) {
             ${icon('search', 19)}
             <input id="q" type="search" placeholder="搜索批次号 / 单位 / 产品" autocomplete="off">
           </div>
+          <div class="filter-row" id="bureau-row" hidden>
+            <select id="bureau-filter" aria-label="按市场监督管理局筛选"></select>
+          </div>
           <div class="segmented" id="filters">
             ${FILTERS.map((f, i) => `<button data-filter="${f.key}" class="${i === 0 ? 'active' : ''}">${f.label}</button>`).join('')}
           </div>
@@ -49,7 +52,9 @@ export async function render(root) {
   const listEl = root.querySelector('#list');
   const qEl = root.querySelector('#q');
   const fileEl = root.querySelector('#file-import');
-  const state = { q: '', filter: 'all', rows: [] };
+  const bureauRow = root.querySelector('#bureau-row');
+  const bureauSel = root.querySelector('#bureau-filter');
+  const state = { q: '', filter: 'all', bureau: '', rows: [] };
   let alive = true;
 
   async function load() {
@@ -61,8 +66,18 @@ export async function render(root) {
     }
     if (!alive) return;
     state.rows = rows;
+    fillBureaus(rows);
     paint();
     paintBackupWarn(rows);
+  }
+
+  /** 市场监督管理局下拉；只有一个局时不显示（省地方） */
+  function fillBureaus(rows) {
+    const list = [...new Set(rows.map(r => String(r.b.bureau || '').trim()).filter(Boolean))].sort();
+    if (!list.includes(state.bureau)) state.bureau = '';
+    bureauRow.hidden = list.length < 2;
+    bureauSel.innerHTML = '<option value="">全部市场监督管理局</option>' +
+      list.map(b => `<option value="${escapeHtml(b)}" ${b === state.bureau ? 'selected' : ''}>${escapeHtml(b)}</option>`).join('');
   }
 
   /** 有照片且超过 7 天没备份时，在首页提示一次 */
@@ -120,10 +135,11 @@ export async function render(root) {
   function paint() {
     const q = state.q.trim().toLowerCase();
     let rows = state.rows.filter(({ b }) => {
+      if (state.bureau && String(b.bureau || '').trim() !== state.bureau) return false;
       if (state.filter === 'open' && b.status === 'submitted') return false;
       if (state.filter === 'submitted' && b.status !== 'submitted') return false;
       if (!q) return true;
-      return [b.batchNo, b.sampledUnit, b.producer, b.product, b.sampleName, b.specModel, b.inspector]
+      return [b.batchNo, b.sampledUnit, b.producer, b.product, b.sampleName, b.specModel, b.inspector, b.bureau]
         .filter(Boolean).join(' ').toLowerCase().includes(q);
     });
 
@@ -175,6 +191,11 @@ export async function render(root) {
 
   qEl.addEventListener('input', () => { state.q = qEl.value; paint(); });
 
+  bureauSel.addEventListener('change', () => {
+    state.bureau = bureauSel.value;
+    paint();
+  });
+
   root.querySelector('#filters').addEventListener('click', e => {
     const btn = e.target.closest('[data-filter]');
     if (!btn) return;
@@ -183,10 +204,18 @@ export async function render(root) {
     paint();
   });
 
+  /** 新建批次：创建后直接进入详情，省一次点击 */
+  async function createBatch() {
+    const created = await openBatchForm();
+    if (!created) return;
+    await load();
+    if (created.id) navigate(`/batch/${created.id}`);
+  }
+
   listEl.addEventListener('click', async e => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'import') { fileEl.click(); return; }
-    if (act === 'new') { if (await openBatchForm()) load(); return; }
+    if (act === 'new') { await createBatch(); return; }
     if (act === 'help') { showHelp(); return; }
     const card = e.target.closest('[data-id]');
     if (card) navigate(`/batch/${card.dataset.id}`);
@@ -194,7 +223,7 @@ export async function render(root) {
 
   root.querySelector('#btn-settings').onclick = () => navigate('/settings');
   root.querySelector('#btn-import').onclick = () => fileEl.click();
-  root.querySelector('#btn-new').onclick = async () => { if (await openBatchForm()) load(); };
+  root.querySelector('#btn-new').onclick = createBatch;
 
   fileEl.addEventListener('change', async () => {
     const file = fileEl.files?.[0];

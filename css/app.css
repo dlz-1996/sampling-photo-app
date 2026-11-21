@@ -167,6 +167,15 @@ h1, h2, h3, p { margin: 0; }
 }
 .searchbar svg { color: var(--muted); flex: 0 0 auto; }
 
+.filter-row { display: flex; }
+.filter-row select {
+  flex: 1; height: 42px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); color: var(--ink);
+  font-size: 13.5px; font-family: inherit;
+}
+.filter-row[hidden] { display: none !important; }
+
 .segmented {
   display: flex; gap: 4px; padding: 4px;
   background: var(--paper-2); border-radius: 12px;
@@ -329,6 +338,8 @@ h1, h2, h3, p { margin: 0; }
 .cam-status .gps-dot { width: 6px; height: 6px; border-radius: 50%; background: #d39b3a; }
 .cam-status .gps-dot.ok { background: #6fbf8e; }
 .cam-status .gps-dot.bad { background: #d96b5a; }
+.cam-status .cam-miss { font-size: 11px; color: #e0a24a; margin-left: 8px; }
+.cam-status .cam-miss.ok { color: #6fbf8e; }
 .cam-body { flex: 1; position: relative; }
 .cam-bottom {
   position: relative; z-index: 2;

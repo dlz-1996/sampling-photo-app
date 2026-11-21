@@ -156,7 +156,7 @@ const EXPORT_README = `抽样照片导出说明
 ================
 
 目录结构：
-  批次号/
+  抽样地区/样品大类/批次号/
     01_企业抽样（营业执照）/
     02_购物票据（发票）/
     03_现场取样（样品照片）/
@@ -171,7 +171,8 @@ const EXPORT_README = `抽样照片导出说明
   1. 把 ZIP 文件放到项目目录下（任意位置）
   2. 在项目目录打开 PowerShell，运行：
        python tools\\photo_ingest.py 你的文件.zip
-  3. 照片会解压到 照片归档/批次号/ 下，并自动核对六类照片是否齐全、哈希是否一致
+  3. 照片会解压到 照片归档/抽样地区/样品大类/批次号/ 下，
+     并自动核对六类照片是否齐全、哈希是否一致
   4. 也可直接用 Windows 解压到 照片归档/ 下，再运行：
        python tools\\photo_ingest.py --check
 
@@ -193,11 +194,14 @@ export async function createExportZip(batchIds) {
     const batch = await getBatch(id);
     if (!batch) continue;
     const photos = await listPhotos(id);
-    let folder = sanitizeFilename(batch.batchNo);
+    const area = sanitizeFilename(String(batch.bureau || '').trim(), '未分类');
+    const kind = sanitizeFilename(String(batch.product || '').trim(), '未分类');
+    const no = sanitizeFilename(String(batch.batchNo || '').trim(), '未命名批次');
+    let folder = `${area}/${kind}/${no}`;
     let n = 2;
-    while (usedFolders.has(folder)) folder = `${sanitizeFilename(batch.batchNo)}(${n++})`;
+    while (usedFolders.has(folder)) folder = `${area}/${kind}/${no}(${n++})`;
     usedFolders.add(folder);
-    names.push(folder);
+    names.push(no);   // 文件名只用批次号，避免带路径分隔符
 
     const perCat = {};
     for (const p of sortedPhotos(photos)) {

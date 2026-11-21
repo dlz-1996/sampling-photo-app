@@ -49,6 +49,7 @@ export async function render(root, { id, query }) {
       <div class="cam-status" id="cam-status">
         <span class="gps-dot" id="gps-dot"></span>
         <span id="gps-text">定位中…</span>
+        <span id="miss-text" class="cam-miss"></span>
         <span class="grow"></span>
         <span id="cnt-text"></span>
       </div>
@@ -164,6 +165,12 @@ export async function render(root, { id, query }) {
     });
     const n = counts[selected] || 0;
     cntText.textContent = `${cat(selected).short} ${n}/${requiredOf(batch, selected)} · 最多 ${MAX_PER_CATEGORY}`;
+    const missing = CATEGORIES.filter(c => (counts[c.key] || 0) < requiredOf(batch, c.key)).length;
+    const missEl = root.querySelector('#miss-text');
+    if (missEl) {
+      missEl.textContent = missing ? `还差 ${missing} 类` : '六类齐全';
+      missEl.classList.toggle('ok', missing === 0);
+    }
     root.querySelectorAll('[data-chip]').forEach(b => {
       if (b.dataset.chip === selected) b.scrollIntoView({ inline: 'center', block: 'nearest' });
     });

@@ -245,6 +245,7 @@ export async function render(root, { id }) {
         <button class="btn ghost block" data-m="edit">${icon('edit', 18)} 编辑批次信息</button>
         <button class="btn ghost block" data-m="note">${icon('file', 18)} 编辑备注</button>
         <button class="btn ghost block" data-m="inspector">${icon('sign', 18)} 修改抽样人</button>
+        <button class="btn ghost block" data-m="copy">${icon('copy', 18)} 复制信息新建批次</button>
         ${batch.status === 'submitted' ? `<button class="btn ghost block" data-m="unlock">${icon('unlock', 18)} 解锁修改</button>` : ''}
         <button class="btn danger block" data-m="delete">${icon('trash', 18)} 删除本批次</button>
       </div>`,
@@ -261,6 +262,13 @@ export async function render(root, { id }) {
         } else if (m === 'inspector') {
           s.close();
           if (await openInspectorSheet(batch)) await load();
+        } else if (m === 'copy') {
+          s.close();
+          const created = await openBatchForm(batch, { asNew: true });
+          if (created) {
+            toast('已复制为新批次，记得填新批次号');
+            navigate(`/batch/${created.id}`, { replace: true });
+          }
         } else if (m === 'unlock') {
           s.close();
           await unlock();
